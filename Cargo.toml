@@ -1,8 +1,9 @@
 [package]
-name = "couaincr"
+name = "couaincre"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
 clap = { version = ">=4.5.5", features = ["derive"] }
 rustsat = { version = ">=0.7.5", features = ["fxhash"] }
+rustc-hash = ">=2.1.1"
