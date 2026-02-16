@@ -1,13 +1,14 @@
 mod problem;
 mod tree_decomposition;
 mod sampler;
+mod restricted;
+mod utils;
+mod counter;
 
 use clap::{Parser, ValueEnum};
 use std::path::PathBuf;
-use std::time::Instant;
-
-use problem::Problem;
-use tree_decomposition::TreeDecomposition;
+use restricted::RestrictedSolver;
+use counter::Counter;
 
 #[derive(Clone, ValueEnum)]
 enum TDHeuristic {
@@ -22,21 +23,19 @@ pub struct Args {
     input: PathBuf,
     #[clap(short, long, value_enum, default_value_t=TDHeuristic::MinFill)]
     td_heuristic: TDHeuristic,
+    #[clap(long, value_enum, default_value_t=Counter::D4)]
+    counter: Counter,
 }
 
+impl Args {
+
+    pub fn counter(&self) -> &Counter {
+        &self.counter
+    }
+}
 
 fn main() {
     let args = Args::parse();
-    let n = 1000;
-    let timer = Instant::now();
-    let models = sampler::sample_solutions(args.input, n);
-    println!("Sample models in {} seconds", timer.elapsed().as_secs());
-    if models.len() < n {
-        println!("Model count is {}", models.len());
-    }
-    /*
-    for model in models.iter() {
-        println!("{:?}", model);
-    }
-    */
+    let mut restricted_solver = RestrictedSolver::new(args.input.clone());
+    restricted_solver.solve(&args);
 }

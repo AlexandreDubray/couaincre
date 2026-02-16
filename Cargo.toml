@@ -8,3 +8,9 @@ clap = { version = ">=4.5.5", features = ["derive"] }
 rustsat = { version = ">=0.7.5", features = ["fxhash"] }
 rustsat-tools = ">=0.7.5"
 rustc-hash = ">=2.1.1"
+malachite-base = "0.9.1"
+
+[dependencies.malachite]
+version = "0.9.1"
+default-features = false
+features = ["naturals_and_integers"]
