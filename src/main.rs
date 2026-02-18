@@ -5,16 +5,11 @@ mod restricted;
 mod utils;
 mod counter;
 
-use clap::{Parser, ValueEnum};
+use clap::Parser;
 use std::path::PathBuf;
 use restricted::RestrictedSolver;
 use counter::Counter;
-
-#[derive(Clone, ValueEnum)]
-enum TDHeuristic {
-    MinFill,
-    MinDeg,
-}
+use tree_decomposition::{TreeDecomposition, TDHeuristic};
 
 #[derive(Parser)]
 #[clap(name="Couaincre", version, author, about)]
@@ -32,10 +27,14 @@ impl Args {
     pub fn counter(&self) -> &Counter {
         &self.counter
     }
+
+    pub fn td_heuristic(&self) -> &TDHeuristic {
+        &self.td_heuristic
+    }
 }
 
 fn main() {
     let args = Args::parse();
-    let mut restricted_solver = RestrictedSolver::new(args.input.clone());
-    restricted_solver.solve(&args);
+    let td = TreeDecomposition::new(&args);
+    println!("{}", td.width());
 }
