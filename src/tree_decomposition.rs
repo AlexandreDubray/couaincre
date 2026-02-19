@@ -28,7 +28,7 @@ impl TreeDecomposition {
         let reader = BufReader::new(File::open(args.input.clone()).unwrap());
         for line in reader.lines() {
             let line = line.unwrap();
-            if line.starts_with("p cnf") || line.starts_with('c') {
+            if line.is_empty() || line.starts_with("p cnf") || line.starts_with('c') {
                 continue;
             }
             let variables = line.split_whitespace().map(|l| l.parse::<isize>().unwrap().abs() as usize).collect::<Vec<usize>>();
