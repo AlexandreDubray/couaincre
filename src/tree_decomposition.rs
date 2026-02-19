@@ -57,7 +57,7 @@ impl TreeDecomposition {
             let score = args.td_heuristic().evaluate_node(&primal_graph, candidate);
             map_node_bucket.insert(candidate, score);
             min_score = min_score.min(score);
-            buckets[score].insert(candidate);
+            Self::insert_in_bucket(&mut buckets, score, candidate);
         }
         while order.len() < number_var {
             while buckets[min_score].is_empty() {
@@ -70,7 +70,7 @@ impl TreeDecomposition {
                 if new_score > min_score {
                     min_score = min_score.min(new_score);
                     buckets[min_score].remove(&node);
-                    buckets[new_score].insert(node);
+                    Self::insert_in_bucket(&mut buckets, new_score, node);
                     map_node_bucket.insert(node, new_score);
                     continue;
                 }
@@ -101,6 +101,13 @@ impl TreeDecomposition {
             order,
             width: width as usize,
         }
+    }
+
+    fn insert_in_bucket(buckets: &mut Vec<FxHashSet<usize>>, bucket: usize, element: usize) {
+        if bucket >= buckets.len() {
+            buckets.resize(bucket + 1, FxHashSet::default());
+        }
+        buckets[bucket].insert(element);
     }
 
     pub fn width(&self) -> usize {
