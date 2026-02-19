@@ -49,7 +49,7 @@ impl TreeDecomposition {
         // Computes the order of elimination for the tree-decomposition
         let mut width = 0;
         let mut order: Vec<usize> = vec![];
-        let mut buckets = vec![FxHashSet::<usize>::default(); args.td_heuristic().max_score(number_var) + 1];
+        let mut buckets = FxHashMap::<usize, FxHashSet<usize>>::default();
         let mut map_node_bucket = FxHashMap::<usize, usize>::default();
         let mut recompute_score = vec![false; number_var];
         let mut min_score = usize::MAX;
@@ -60,22 +60,22 @@ impl TreeDecomposition {
             Self::insert_in_bucket(&mut buckets, score, candidate);
         }
         while order.len() < number_var {
-            while buckets[min_score].is_empty() {
+            while !buckets.contains_key(&min_score) || buckets.get(&min_score).unwrap().is_empty() {
                 min_score += 1;
             }
-            let node = *buckets[min_score].iter().next().unwrap();
+            let node = *buckets.get(&min_score).unwrap().iter().next().unwrap();
             if recompute_score[node] {
                 recompute_score[node] = false;
                 let new_score = args.td_heuristic().evaluate_node(&primal_graph, node);
                 if new_score > min_score {
                     min_score = min_score.min(new_score);
-                    buckets[min_score].remove(&node);
+                    buckets.get_mut(&min_score).unwrap().remove(&node);
                     Self::insert_in_bucket(&mut buckets, new_score, node);
                     map_node_bucket.insert(node, new_score);
                     continue;
                 }
             }
-            buckets[min_score].remove(&node);
+            buckets.get_mut(&min_score).unwrap().remove(&node);
             order.push(node);
             
             // Apply the node elimination, and compute the size of the created clique
@@ -103,11 +103,11 @@ impl TreeDecomposition {
         }
     }
 
-    fn insert_in_bucket(buckets: &mut Vec<FxHashSet<usize>>, bucket: usize, element: usize) {
-        if bucket >= buckets.len() {
-            buckets.resize(bucket + 1, FxHashSet::default());
+    fn insert_in_bucket(buckets: &mut FxHashMap<usize, FxHashSet<usize>>, bucket: usize, element: usize) {
+        if !buckets.contains_key(&bucket) {
+            buckets.insert(bucket, FxHashSet::<usize>::default());
         }
-        buckets[bucket].insert(element);
+        buckets.get_mut(&bucket).unwrap().insert(element);
     }
 
     pub fn width(&self) -> usize {
