@@ -21,11 +21,11 @@ pub enum TDHeuristic {
 impl TreeDecomposition {
 
     pub fn new(args: &Args) -> Self {
-        println!("[Tree decomposition] Computing elimination order...");
+        log::trace!("[Tree decomposition] Computing elimination order...");
         let number_var = number_var_from_dimacs(args.input.clone());
-        println!("[Tree decomposition] {} variables in the problem", number_var);
+        log::trace!("[Tree decomposition] {} variables in the problem", number_var);
 
-        println!("[Tree decomposition] Creating the primal graph...");
+        log::trace!("[Tree decomposition] Creating the primal graph...");
         let mut primal_graph: Vec<FxHashSet<usize>> = (0..number_var).map(|_| FxHashSet::default()).collect();
 
         let reader = BufReader::new(File::open(args.input.clone()).unwrap());
@@ -45,7 +45,7 @@ impl TreeDecomposition {
             }
         }
 
-        println!("[Tree decomposition] Primal graph constructed. Computing elimination order...");
+        log::trace!("[Tree decomposition] Primal graph constructed. Computing elimination order...");
         // Computes the order of elimination for the tree-decomposition
         let mut width = 0;
         let mut order: Vec<usize> = vec![];

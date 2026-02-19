@@ -9,6 +9,9 @@ rustsat = { version = ">=0.7.5", features = ["fxhash"] }
 rustsat-tools = ">=0.7.5"
 rustc-hash = ">=2.1.1"
 malachite-base = "0.9.1"
+log = "0.4"
+env_logger = "0.11"
+clap-verbosity-flag = "3.0"
 
 [dependencies.malachite]
 version = "0.9.1"
