@@ -7,6 +7,7 @@ use malachite::Natural;
 use crate::sampler::Sampler;
 use crate::utils::*;
 use crate::Args;
+use crate::tree_decomposition::TreeDecomposition;
 
 pub struct RestrictedSolver {
     input: PathBuf,
@@ -29,14 +30,7 @@ impl RestrictedSolver {
     }
 
     pub fn solve(&mut self, args: &Args) {
-        println!("Computing restrictions with number_sample = 1000");
-        let restrictions = self.get_restrictions(1000);
-        if self.exact {
-            let time = self.start_time.elapsed().as_secs();
-            println!("c s exact arb int {} ({} secs)", self.model_count, time);
-            self.bounds.push((time, self.model_count.clone()));
-            return;
-        }
+        let restrictions = self.get_restrictions(args);
         let number_var = number_var_from_dimacs(self.input.clone());
         let clauses = clauses_from_dimacs(self.input.clone());
         for i in 0..restrictions.len() {
@@ -50,74 +44,11 @@ impl RestrictedSolver {
         }
     }
 
-    fn get_restrictions(&mut self, n: usize) -> Vec<Restriction> {
-        let number_var = number_var_from_dimacs(self.input.clone());
-        // We map each assignment (four possibilities) to a single index. For an
-        // assignment (i, j) with i, j in {0, 1}, we compute  the index as follows:
-        //      index = i + 2j
-        //  which maps the following way:
-        //  (0, 0) -> 0
-        //  (1, 0) -> 1
-        //  (0, 1) -> 2
-        //  (1, 1) -> 3
-        let mut stats: Vec<Vec<Vec<usize>>> = (0..number_var).map(|u| {
-            (0..(u+1)).map(|_| {
-                vec![0; 4]
-            }).collect()
-        }).collect();
-        let sampler = Sampler::new(self.input.clone());
-        let t = Vec::from([1]);
-        let f = Vec::from([0]);
-        let dc = Vec::from([0, 1]);
-        for model in sampler.sample_solutions(n) {
-            self.model_count += Natural::from(1u32);
-            // compute co-occurences for each variable pairs
-            for u in 0..number_var {
-                match model.var_value(Var::new(u as u32)) {
-                    TernaryVal::True => stats[u][u][3] += 1,
-                    TernaryVal::False => stats[u][u][0] += 1,
-                    TernaryVal::DontCare => {
-                        stats[u][u][0] += 1;
-                        stats[u][u][3] += 1;
-                    },
-                };
-                let dom_u = match model.var_value(Var::new(u as u32)) {
-                    TernaryVal::True => &t,
-                    TernaryVal::False => &f,
-                    TernaryVal::DontCare => &dc,
-                };
-                for v in 0..u {
-                    let dom_v = match model.var_value(Var::new(v as u32)) {
-                        TernaryVal::True => &t,
-                        TernaryVal::False => &f,
-                        TernaryVal::DontCare => &dc,
-                    };
-                    for i in dom_u.iter() {
-                        for j in dom_v.iter() {
-                            let index = i + 2*j;
-                            stats[u][v][index] += 1;
-                        }
-                    }
-                }
-            }
-        }
-        if self.model_count < n {
-            self.exact = true;
-            vec![]
-        } else {
-            let mut restrictions: Vec<(usize, Restriction)> = vec![];
-            for u in 0..number_var {
-                restrictions.push((stats[u][u][3], Restriction::new(Some(u), None, RestrictionOp::AssignTrue)));
-                restrictions.push((stats[u][u][0], Restriction::new(Some(u), None, RestrictionOp::AssignFalse)));
-                for v in 0..u {
-                    restrictions.push((stats[u][v][0] + stats[u][v][3], Restriction::new(Some(u), Some(v), RestrictionOp::Equal)));
-                    restrictions.push((stats[u][v][1] + stats[u][v][2], Restriction::new(Some(u), Some(v), RestrictionOp::NotEqual)));
-                }
-            }
-            restrictions.sort_unstable_by_key(|x| x.0);
-            restrictions.truncate(10);
-            restrictions.into_iter().map(|(_, y)| y).collect()
-        }
+    fn get_restrictions(&mut self, args: &Args) -> Vec<Restriction> {
+        log::info!("Computing tree decomposition...");
+        let td = TreeDecomposition::new(args);
+        log::info!("Tree decomposition width is {}", td.width());
+        vec![]
     }
 }
 
