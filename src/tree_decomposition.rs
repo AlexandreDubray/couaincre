@@ -1,6 +1,7 @@
 use std::fs::File;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Write};
 use std::collections::VecDeque;
+use std::process::{Command, Stdio};
 
 use clap::ValueEnum;
 use rustc_hash::{FxHashSet, FxHashMap};
@@ -40,7 +41,7 @@ impl TreeDecomposition {
             if line.is_empty() || line.starts_with("p cnf") || line.starts_with('c') {
                 continue;
             }
-            let variables = line.split_whitespace().map(|l| l.parse::<isize>().unwrap().abs() as usize).collect::<Vec<usize>>();
+            let variables = line.split_whitespace().map(|l| l.parse::<isize>().unwrap().unsigned_abs()).collect::<Vec<usize>>();
             for i in 0..(variables.len() - 1) {
                 for j in (i+1)..(variables.len() - 1) {
                     let u = variables[i] - 1;
@@ -52,6 +53,10 @@ impl TreeDecomposition {
         }
 
         log::trace!("Primal graph constructed. Computing elimination order using the {} heuristic...", args.td_heuristic());
+        if args.td_validate() {
+            Self::write_primal_graph(&primal_graph);
+        }
+
         // order[i] give the node eliminated at iteration i during the elimination process
         let mut order: Vec<usize> = vec![0; number_var];
         // nodes_order[node] gives the elimination order of node
@@ -124,7 +129,12 @@ impl TreeDecomposition {
         // Computes the edges between the bags and reduce the resulting tree
         let children = Self::construct_tree(&mut bags, &nodes_order);
         let width = bags.iter().map(|b| b.len()).max().unwrap() - 1;
-        log::trace!("Tree decomposition] Tree decomposition of size {} with {} bags", width, bags.len());
+        log::trace!("Tree decomposition of size {} with {} bags", width, bags.len());
+        if args.td_validate() {
+            log::trace!("Validating the tree decomposition");
+            Self::write_tree_decomposition(&bags, &children, width, primal_graph.len());
+            Self::validate_tree_decomposition();
+        }
         Self {
             bags,
             width,
@@ -219,6 +229,45 @@ impl TreeDecomposition {
             }
         }
         children
+    }
+
+    fn write_primal_graph(primal_graph: &[FxHashSet<usize>]) {
+        let mut edges: Vec<(usize, usize)> = vec![];
+        for (u, neighbors) in  primal_graph.iter().enumerate() {
+            for v in neighbors.iter().copied() {
+                if u < v {
+                    edges.push((u + 1, v + 1));
+                }
+            }
+        }
+        let mut file = File::create("primal.gr").unwrap();
+        writeln!(file, "p tw {} {}", primal_graph.len(), edges.len()).unwrap();
+        write!(file, "{}", edges.iter().map(|(u, v)| format!("{} {}", u, v)).collect::<Vec<String>>().join("\n")).unwrap();
+    }
+
+    fn write_tree_decomposition(bags: &[FxHashSet<usize>], children: &[Vec<usize>], width: usize, number_nodes: usize) {
+        let mut file = File::create("decomp.td").unwrap();
+        writeln!(file, "s td {} {} {}", bags.len(), width + 1, number_nodes).unwrap();
+        for (b_id, bag) in bags.iter().enumerate() {
+            writeln!(file, "b {} {}", b_id + 1, bag.iter().map(|node| format!("{}", node + 1)).collect::<Vec<String>>().join(" ")).unwrap();
+        }
+        for (b_id, children_bag) in children.iter().enumerate() {
+            for child in children_bag.iter().copied() {
+                writeln!(file, "{} {}", b_id + 1, child + 1).unwrap();
+            }
+        }
+    }
+
+    fn validate_tree_decomposition() {
+        let process_status = Command::new("td-validate")
+            .args(["primal.gr", "decomp.td"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .status()
+            .expect("Failed to execute td-validate command");
+        if !process_status.success() {
+            std::process::exit(1);
+        }
     }
 }
 

@@ -18,10 +18,18 @@ use tree_decomposition::{TreeDecomposition, TDHeuristic};
 #[clap(name="Couaincre", version, author, about)]
 pub struct Args {
     #[clap(short, long, value_parser)]
+    /// The input CNF in DIMACS format
     input: PathBuf,
     #[clap(short, long, value_enum, default_value_t=TDHeuristic::MinFill)]
+    /// Which heuristic to use during the construction of the tree decomposition
     td_heuristic: TDHeuristic,
+    #[clap(long)]
+    /// If present, only validate the tree decomposition. Requires the td-validate tools from the
+    /// PACE challenge
+    td_validate: bool,
     #[clap(long, value_enum, default_value_t=Counter::D4)]
+    /// Which model counter to use when computing the model count of restricted and relaxed
+    /// formulas
     counter: Counter,
     #[command(flatten)]
     verbose: Verbosity<InfoLevel>,
@@ -36,11 +44,14 @@ impl Args {
     pub fn td_heuristic(&self) -> &TDHeuristic {
         &self.td_heuristic
     }
+
+    pub fn td_validate(&self) -> bool {
+        self.td_validate
+    }
 }
 
 fn main() {
     let args = Args::parse();
     env_logger::Builder::new().filter_level(args.verbose.log_level_filter()).init();
     let td = TreeDecomposition::new(&args);
-    println!("{}", td.width());
 }
