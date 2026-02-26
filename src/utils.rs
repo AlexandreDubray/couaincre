@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
+use std::process::{Command, Stdio, exit};
 
 use crate::Args;
 
@@ -38,4 +39,23 @@ pub fn metadata_from_header(args: &Args) -> (usize, usize) {
     }
     log::error!("No header found in DIMACS file when looking for metadata");
     panic!();
+}
+
+pub fn check_executables() {
+    if let Err(_) = Command::new("cadical")
+        .arg("--help")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status() {
+        log::error!("No executable cadical found");
+        exit(1);
+    }
+    if let Err(_) = Command::new("bpe")
+        .arg("--help")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status() {
+        log::error!("No executable bpe found");
+        exit(1);
+    }
 }

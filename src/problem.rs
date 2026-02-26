@@ -7,6 +7,7 @@ use crate::Args;
 use crate::utils::metadata_from_header;
 
 pub struct Problem {
+    number_var: usize,
     clauses: Vec<Vec<isize>>,
 }
 
@@ -28,7 +29,7 @@ impl Problem {
             // Code for UNSAT in cadical
             if code == 20 {
                 log::info!("Formula is UNSAT");
-                return Self { clauses: vec![] };
+                return Self { number_var: 0, clauses: vec![] };
             }
         }
         log::info!("Formula is SAT");
@@ -83,6 +84,7 @@ impl Problem {
                     } else {
                         debug_assert!(cls.len() == 1);
                         let variable = cls[0].unsigned_abs();
+                        max_var = max_var.max(variable);
                         let assignment = cls[0] > 0;
                         queue.push((variable, assignment));
                     }
@@ -147,6 +149,7 @@ impl Problem {
         }
         log::info!("After initial BUP, {} variables and {} clauses remaining", map_variable.len(), clauses.len());
         Self {
+            number_var: new_variable_index - 1,
             clauses,
         }
     }
@@ -154,5 +157,15 @@ impl Problem {
     /// Returns true if the problem is empty
     pub fn is_empty(&self) -> bool {
         self.clauses.is_empty()
+    }
+
+    /// Returns the number of variable in the problem
+    pub fn number_var(&self) -> usize {
+        self.number_var
+    }
+
+    /// Iterates on the clauses of the problem
+    pub fn iter_clauses(&self) -> impl Iterator<Item = &Vec<isize>> {
+        self.clauses.iter()
     }
 }

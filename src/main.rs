@@ -61,9 +61,10 @@ impl Args {
 fn main() {
     let args = Args::parse();
     env_logger::Builder::new().filter_level(args.verbose.log_level_filter()).init();
+    utils::check_executables();
     let problem = Problem::new(&args);
     if problem.is_empty() {
         log::info!("UNSAT");
     }
-    //let td = TreeDecomposition::new(&args);
+    let td = TreeDecomposition::new(&args, &problem);
 }

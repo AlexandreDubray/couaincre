@@ -4,6 +4,7 @@ use std::time::Instant;
 use malachite::Natural;
 
 use crate::utils::*;
+use crate::problem::Problem;
 use crate::Args;
 use crate::tree_decomposition::TreeDecomposition;
 
@@ -27,8 +28,8 @@ impl RestrictedSolver {
         }
     }
 
-    pub fn solve(&mut self, args: &Args) {
-        let restrictions = self.get_restrictions(args);
+    pub fn solve(&mut self, args: &Args, problem: &Problem) {
+        let restrictions = self.get_restrictions(args, problem);
         let number_var = number_var_from_dimacs(self.input.clone());
         let clauses = clauses_from_dimacs(self.input.clone());
         for i in 0..restrictions.len() {
@@ -42,8 +43,8 @@ impl RestrictedSolver {
         }
     }
 
-    fn get_restrictions(&mut self, args: &Args) -> Vec<Restriction> {
-        let td = TreeDecomposition::new(args);
+    fn get_restrictions(&mut self, args: &Args, problem: &Problem) -> Vec<Restriction> {
+        let td = TreeDecomposition::new(args, problem);
         vec![]
     }
 }
