@@ -3,25 +3,24 @@ use std::io::{BufRead, BufReader, Write};
 use std::collections::VecDeque;
 use std::process::{Command, Stdio};
 
-use clap::ValueEnum;
 use rustc_hash::{FxHashSet, FxHashMap};
 
 use crate::Args;
 use crate::utils::*;
 
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct BagIndex(pub usize);
+
 pub struct TreeDecomposition {
     bags: Vec<FxHashSet<usize>>,
     width: usize,
-    children: Vec<Vec<usize>>,
-}
-
-#[derive(Clone, ValueEnum)]
-pub enum TDHeuristic {
-    MinFill,
-    MinDeg,
+    children: Vec<Vec<BagIndex>>,
+    roots: Vec<BagIndex>,
 }
 
 impl TreeDecomposition {
+
+    // Implementation for the creation of the tree decomposition
 
     /// Creates a tree decomposition of the primal graph of the CNF formula in args.input using a
     /// greedy heuristic. The tree-decomposition is computed by finding an elimination order for
@@ -127,7 +126,7 @@ impl TreeDecomposition {
             primal_graph[node].clear();
         }
         // Computes the edges between the bags and reduce the resulting tree
-        let children = Self::construct_tree(&mut bags, &nodes_order);
+        let (roots, children) = Self::construct_tree(&mut bags, &nodes_order);
         let width = bags.iter().map(|b| b.len()).max().unwrap() - 1;
         log::trace!("Tree decomposition of size {} with {} bags", width, bags.len());
         if args.td_validate() {
@@ -139,6 +138,7 @@ impl TreeDecomposition {
             bags,
             width,
             children,
+            roots,
         }
     }
 
@@ -157,7 +157,7 @@ impl TreeDecomposition {
     /// elimination order (i.e., its bag id)
     ///
     /// This functions modify the bags and returns the vector of children pointers.
-    fn construct_tree(bags: &mut Vec<FxHashSet<usize>>, nodes_order: &[usize]) -> Vec<Vec<usize>> {
+    fn construct_tree(bags: &mut Vec<FxHashSet<usize>>, nodes_order: &[usize]) -> (Vec<BagIndex>, Vec<Vec<BagIndex>>) {
         // Each node has a single parent which is defined a follow. Given the bag {v_1, ..., v_n} U {x}
         // created for node x, it has a link to the bag associated with node v_i with i such that
         //      v_i is the node eliminated the closest to x and,
@@ -166,15 +166,15 @@ impl TreeDecomposition {
         log::trace!("Nodes order is {:?}", nodes_order);
         log::trace!("Bags are \n\t{}", bags.iter().enumerate().map(|(i, b)| format!("Bags {}: {:?}",i, b)).collect::<Vec<String>>().join("\n\t"));
         // For each bag, store the set of children of the node
-        let mut children = vec![Vec::<usize>::default(); bags.len()];
-        let mut parents: Vec<Option<usize>> = vec![None; bags.len()];
+        let mut children = vec![Vec::<BagIndex>::default(); bags.len()];
+        let mut parents: Vec<Option<BagIndex>> = vec![None; bags.len()];
         for node in 0..nodes_order.len() {
             // Bag associated with this node
             let bag_id = nodes_order[node];
             if let Some(parent) = bags[bag_id].iter().copied().map(|n| nodes_order[n]).filter(|order| *order > bag_id).min() {
                 log::trace!("Parent of bag {} is {}", bag_id, parent);
-                children[parent].push(bag_id);
-                parents[bag_id] = Some(parent);
+                children[parent].push(BagIndex(bag_id));
+                parents[bag_id] = Some(BagIndex(parent));
             }
         }
         // Compressing the tree decomposition. A bag can be merged with its parent if it is a
@@ -183,52 +183,60 @@ impl TreeDecomposition {
         // parent can be merged with the children of its children).
 
         log::trace!("Minimizing the tree decomposition");
+        let mut roots = vec![];
         // Queue of bags to consider, implemented as a FIFO queue
-        let mut queue = VecDeque::<usize>::new();
+        let mut queue = VecDeque::<BagIndex>::new();
         // Flag to indicate if the bag is already queued.
         let mut queued = vec![false; bags.len()];
         // We insert every leaf bags. We know that at least the bag 0 is a leaf
-        for node in (0..bags.len()).filter(|i| children[*i].is_empty()) {
-            queued[node] = true;
-            queue.push_back(node);
+        for bag_id in (0..bags.len()).filter(|b| children[*b].is_empty()) {
+            queued[bag_id] = true;
+            queue.push_back(BagIndex(bag_id));
         }
         while !queue.is_empty() {
-            let node = queue.pop_front().unwrap();
-            if parents[node].is_none() {
-                log::trace!("Poping root - bag {}", node);
+            let bag = queue.pop_front().unwrap();
+            if parents[bag.0].is_none() {
+                log::trace!("Poping root - bag {}", bag.0);
+                roots.push(bag);
                 continue;
             }
-            log::trace!("Poping internal leaf - bag {}", node);
-            let parent = parents[node].unwrap();
-            log::trace!("Is subset of its parent? {}", bags[node].is_subset(&bags[parent]));
+            log::trace!("Poping internal leaf - bag {}", bag.0);
+            let parent = parents[bag.0].unwrap();
+            log::trace!("Is subset of its parent? {}", bags[bag.0].is_subset(&bags[parent.0]));
             // If the node is a subset of its parent, we remove node and redirect its children to
             // its parent. Note that this work incrementally because if "child" is not a subset of
             // "node", then it is not a subset of "parent" (or it break tree-decomposition
             // conditions)
-            if bags[node].is_subset(&bags[parent]) {
-                children[parent].remove(node);
-                for i in 0..children[node].len() {
-                    let child = children[node][i];
-                    children[parent].push(child);
+            if bags[bag.0].is_subset(&bags[parent.0]) {
+                children[parent.0].remove(bag.0);
+                for i in 0..children[bag.0].len() {
+                    let child = children[bag.0][i];
+                    children[parent.0].push(child);
                 }
-                children[node].clear();
-                bags[node].clear();
+                children[bag.0].clear();
+                bags[bag.0].clear();
             }
-            if !queued[parent] {
-                queued[parent] = true;
+            if !queued[parent.0] {
+                queued[parent.0] = true;
                 queue.push_back(parent);
             }
         }
 
-        // We remove empty bags. We swap-remove the bags and swap the children so that the
-        // correspondance still matches.
+        let mut map = FxHashMap::<BagIndex, BagIndex>::default();
+        let mut new_index = 0;
+        for (i, bag) in bags.iter().enumerate() {
+            if !bag.is_empty() {
+                map.insert(BagIndex(i), BagIndex(new_index));
+                new_index += 1;
+            }
+        }
         for i in (0..bags.len()).rev() {
             if bags[i].is_empty() {
                 bags.swap_remove(i);
                 children.swap_remove(i);
             }
         }
-        children
+        (roots, children)
     }
 
     fn write_primal_graph(primal_graph: &[FxHashSet<usize>]) {
@@ -245,7 +253,7 @@ impl TreeDecomposition {
         write!(file, "{}", edges.iter().map(|(u, v)| format!("{} {}", u, v)).collect::<Vec<String>>().join("\n")).unwrap();
     }
 
-    fn write_tree_decomposition(bags: &[FxHashSet<usize>], children: &[Vec<usize>], width: usize, number_nodes: usize) {
+    fn write_tree_decomposition(bags: &[FxHashSet<usize>], children: &[Vec<BagIndex>], width: usize, number_nodes: usize) {
         let mut file = File::create("decomp.td").unwrap();
         writeln!(file, "s td {} {} {}", bags.len(), width + 1, number_nodes).unwrap();
         for (b_id, bag) in bags.iter().enumerate() {
@@ -253,7 +261,7 @@ impl TreeDecomposition {
         }
         for (b_id, children_bag) in children.iter().enumerate() {
             for child in children_bag.iter().copied() {
-                writeln!(file, "{} {}", b_id + 1, child + 1).unwrap();
+                writeln!(file, "{} {}", b_id + 1, child.0 + 1).unwrap();
             }
         }
     }
@@ -269,63 +277,47 @@ impl TreeDecomposition {
             std::process::exit(1);
         }
     }
-}
 
-impl TDHeuristic {
 
-    fn evaluate_node(&self, graph: &[FxHashSet<usize>], node: usize) -> usize {
-        match self {
-            Self::MinFill => {
-                if graph[node].is_empty() {
-                    return 0;
+    // Implemtnation of modifying functions for TD during restriction and relaxations
+
+    pub fn number_roots(&self) -> usize {
+        self.roots.len()
+    }
+
+    pub fn get_root_at(&self, root_id: usize) -> BagIndex {
+        self.roots[root_id]
+    }
+
+    /// Merge two variables in a bag and its children (recursively)
+    pub fn merge_variables(&mut self, x: usize, y: usize, bag_id: BagIndex) {
+        let mut q = vec![bag_id];
+        while let Some(b_id) = q.pop() {
+            if self[b_id].contains(&x) && self[b_id].contains(&y) {
+                self[b_id].remove(&y);
+                for child in self.iter_children(b_id) {
+                    q.push(child);
                 }
-                let number_neighbors = graph[node].len();
-                let mut missing_edges = (number_neighbors * (number_neighbors - 1)) / 2;
-                let neighbors = graph[node].iter().copied().collect::<Vec<usize>>();
-                for i in 0..neighbors.len() {
-                    for j in (i+1)..neighbors.len() {
-                        if graph[neighbors[i]].contains(&neighbors[j]) {
-                            missing_edges -= 1;
-                        }
-                    }
-                }
-                missing_edges
-            },
-            Self::MinDeg => {
-                graph[node].len()
             }
         }
     }
 
-    fn flag_nodes_to_update(&self, graph: &[FxHashSet<usize>], node: usize, flags: &mut [bool]) {
-        match self {
-            Self::MinFill => {
-                // All nodes at a distance of 2 in the graph can have their min-fill heuristic
-                // changed.
-                for neighbor in graph[node].iter().copied() {
-                    flags[neighbor] = true;
-                    for neighbor_of_neighbor in graph[neighbor].iter().copied().filter(|n| *n != node) {
-                        flags[neighbor_of_neighbor] = true;
-                    }
-                }
-            },
-            Self::MinDeg => {
-                for neighbor in graph[node].iter().copied() {
-                    flags[neighbor] = true;
-                }
-            },
-        }
+    pub fn iter_children(&self, bag: BagIndex) -> impl Iterator<Item = BagIndex> {
+        self.children[bag.0].iter().copied()
     }
 
 }
 
-impl std::fmt::Display for TDHeuristic {
+impl std::ops::Index<BagIndex> for TreeDecomposition {
+    type Output = FxHashSet<usize>;
 
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            TDHeuristic::MinFill => write!(f, "min-fill")?,
-            TDHeuristic::MinDeg => write!(f, "min-deg")?,
-        };
-        Ok(())
+    fn index(&self, index: BagIndex) -> &Self::Output {
+        &self.bags[index.0]
+    }
+}
+
+impl std::ops::IndexMut<BagIndex> for TreeDecomposition {
+    fn index_mut(&mut self, index: BagIndex) -> &mut Self::Output {
+        &mut self.bags[index.0]
     }
 }

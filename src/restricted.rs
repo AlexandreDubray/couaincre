@@ -1,10 +1,8 @@
 use std::path::PathBuf;
 use std::time::Instant;
 
-use rustsat::types::{TernaryVal, Var};
 use malachite::Natural;
 
-use crate::sampler::Sampler;
 use crate::utils::*;
 use crate::Args;
 use crate::tree_decomposition::TreeDecomposition;
@@ -45,9 +43,7 @@ impl RestrictedSolver {
     }
 
     fn get_restrictions(&mut self, args: &Args) -> Vec<Restriction> {
-        log::info!("Computing tree decomposition...");
         let td = TreeDecomposition::new(args);
-        log::info!("Tree decomposition width is {}", td.width());
         vec![]
     }
 }

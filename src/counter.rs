@@ -12,7 +12,7 @@ pub enum Counter {
 
 impl Counter {
 
-    pub fn count(&self, number_var: usize, clauses: &Vec<String>, restrictions: &Vec<String>) -> Natural {
+    pub fn count(&self, number_var: usize, clauses: &[String], restrictions: &[String]) -> Natural {
         let mut file = File::create("restricted.cnf").unwrap();
         writeln!(file, "p cnf {} {}", number_var, clauses.len() + restrictions.len()).unwrap();
         for clause in clauses.iter() {
