@@ -7,15 +7,16 @@ use rustc_hash::{FxHashSet, FxHashMap};
 
 use crate::Args;
 use crate::problem::Problem;
+use crate::restricted::{Restriction, RestrictionOp};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct BagIndex(pub usize);
 
 pub struct TreeDecomposition {
-    bags: Vec<FxHashSet<isize>>,
+    bags: Vec<FxHashSet<usize>>,
     width: usize,
     edges: Vec<FxHashSet<BagIndex>>,
-    root: Option<BagIndex>,
+    var_to_bags: Vec<Vec<BagIndex>>,
 }
 
 impl TreeDecomposition {
@@ -59,7 +60,7 @@ impl TreeDecomposition {
         let mut nodes_order = vec![0; number_var];
         // Bags of the tree decomposition. At the beginning, we create one bag per node in the
         // graph and then reduce the decomposition by merging bags.
-        let mut bags: Vec<FxHashSet<isize>> = vec![];
+        let mut bags: Vec<FxHashSet<usize>> = vec![];
 
         // Buckets used to compute the order. We place each node in a bucket corresponding to its
         // heuristic score. Then, we can process nodes in increasing order of bucket.
@@ -101,14 +102,14 @@ impl TreeDecomposition {
                 min_score = min_score.min(new_score);
             }
             let ord = bags.len();
-            log::trace!("Elimination process. Eliminating node {} at order {}", node + 1, ord);
+            log::trace!("Elimination process. Eliminating node {} at order {}", node, ord);
             nodes_order[node] = ord;
             order[ord] = node;
 
             // Creates the bag with the node and its neighbors
-            let mut bag = FxHashSet::<isize>::default();
-            bag.insert(node as isize + 1);
-            bag.extend(primal_graph[node].iter().map(|n| (*n + 1) as isize));
+            let mut bag = FxHashSet::<usize>::default();
+            bag.insert(node);
+            bag.extend(primal_graph[node].iter());
             log::trace!("New bag is {:?}", bag);
             bags.push(bag);
             
@@ -127,7 +128,14 @@ impl TreeDecomposition {
         }
         // Computes the edges between the bags and reduce the resulting tree
         let edges = Self::compute_td_edges(&mut bags, &nodes_order);
-        let width = bags.iter().map(|b| b.len()).max().unwrap() - 1;
+        let mut width = 0;
+        let mut var_to_bags = vec![vec![]; number_var];
+        for (bag_id, bag) in bags.iter().enumerate() {
+            width = width.max(bag.len() - 1);
+            for variable in bag.iter().copied() {
+                var_to_bags[variable].push(bag_id);
+            }
+        }
         log::info!("Tree decomposition of size {} with {} bags", width, bags.len());
         if args.td_validate() {
             log::trace!("Validating the tree decomposition after minimisation");
@@ -138,7 +146,7 @@ impl TreeDecomposition {
             bags,
             width,
             edges,
-            root: None,
+            var_to_bags: vec![vec![]; number_var],
         }
     }
 
@@ -148,7 +156,7 @@ impl TreeDecomposition {
     }
 
     pub fn width(&self) -> usize {
-        self.width
+        self.bags.iter().map(|bag| bag.len()).max().unwrap() - 1
     }
 
     /// Given a set of bags and a node elimination order, computes the tree structure and reduce
@@ -157,7 +165,7 @@ impl TreeDecomposition {
     /// elimination order (i.e., its bag id)
     ///
     /// This functions modify the bags and returns the vector of children pointers.
-    fn compute_td_edges(bags: &mut Vec<FxHashSet<isize>>, nodes_order: &[usize]) -> Vec<FxHashSet<BagIndex>> {
+    fn compute_td_edges(bags: &mut Vec<FxHashSet<usize>>, nodes_order: &[usize]) -> Vec<FxHashSet<BagIndex>> {
         // We define a link between a bag created when eliminating node x as follows.
         // Given the bag {v_1, ..., v_n} U {x}, it has a link to the bag associated with node v_i with i such that
         //      v_i is the node eliminated the closest to x and,
@@ -175,7 +183,7 @@ impl TreeDecomposition {
             // bag this is the closest in the elimination order from n AND eliminated after n.
             // We map each node to its order, filter the ones eliminated before n and take the min.
             // The order give us the bag_id
-            if let Some(b) = bags[bag.0].iter().copied().map(|other_node| nodes_order[(other_node - 1) as usize]).filter(|order| *order > bag.0).min() {
+            if let Some(b) = bags[bag.0].iter().copied().map(|other_node| nodes_order[other_node]).filter(|order| *order > bag.0).min() {
                 log::trace!("Linking bag {} with bag {}", bag.0, b);
                 edges[bag.0].insert(BagIndex(b));
                 edges[b].insert(bag);
@@ -190,8 +198,8 @@ impl TreeDecomposition {
         for bag in 0..bags.len() {
             for neighbor in edges[bag].iter() {
                 if bags[bag].is_subset(&bags[neighbor.0]) {
-                    let root_bag = Self::find_set(bag, &mut parents);
-                    let root_neighbor = Self::find_set(neighbor.0, &mut parents);
+                    let root_bag = Self::find_equiv(bag, &mut parents);
+                    let root_neighbor = Self::find_equiv(neighbor.0, &mut parents);
                     if root_bag != root_neighbor {
                         parents[root_bag] = root_neighbor;
                         break;
@@ -239,14 +247,46 @@ impl TreeDecomposition {
         new_edges
     }
 
-    fn find_set(node: usize, parents: &mut Vec<usize>) -> usize {
+    fn find_equiv(node: usize, parents: &mut Vec<usize>) -> usize {
         if node == parents[node] {
             return node;
         }
-        let new_parent = Self::find_set(parents[node], parents);
+        let new_parent = Self::find_equiv(parents[node], parents);
         parents[node] = new_parent;
         new_parent
     }
+
+    // Implemtnation of modifying functions for TD during restriction and relaxations
+
+    /// Returns the number of bags in which a variable appears
+    pub fn number_bags(&self, variable: usize) -> usize {
+        self.var_to_bags[variable].len()
+    }
+
+    /// Returns an iterator on the bags of a variable
+    pub fn iter_bags_of_var(&self, variable: usize) -> impl Iterator<Item = BagIndex> {
+        self.var_to_bags[variable].iter().copied()
+    }
+
+    /// Find two variable to merge
+    pub fn restrict(&mut self) -> Restriction {
+    }
+
+    /// Merge two variables in a bag and its children (recursively)
+    pub fn merge_variables(&mut self, x: usize, y: usize, bag_id: BagIndex) {
+    }
+
+    /// Iterates over the bags in the TD
+    pub fn iter_bags(&self) -> impl Iterator<Item = BagIndex> {
+        (0..self.bags.len()).map(BagIndex)
+    }
+
+    /// Iterates over the variable in a bag
+
+
+}
+
+impl TreeDecomposition {
 
     fn write_primal_graph(primal_graph: &[FxHashSet<usize>]) {
         let mut edges: Vec<(usize, usize)> = vec![];
@@ -262,11 +302,11 @@ impl TreeDecomposition {
         write!(file, "{}", edges.iter().map(|(u, v)| format!("{} {}", u, v)).collect::<Vec<String>>().join("\n")).unwrap();
     }
 
-    fn write_tree_decomposition(bags: &[FxHashSet<isize>], edges: &[FxHashSet<BagIndex>], width: usize, number_nodes: usize) {
+    fn write_tree_decomposition(bags: &[FxHashSet<usize>], edges: &[FxHashSet<BagIndex>], width: usize, number_nodes: usize) {
         let mut file = File::create("decomp.td").unwrap();
         writeln!(file, "s td {} {} {}", bags.len(), width + 1, number_nodes).unwrap();
         for (b_id, bag) in bags.iter().enumerate() {
-            writeln!(file, "b {} {}", b_id + 1, bag.iter().map(|node| format!("{}", node)).collect::<Vec<String>>().join(" ")).unwrap();
+            writeln!(file, "b {} {}", b_id + 1, bag.iter().map(|node| format!("{}", node + 1)).collect::<Vec<String>>().join(" ")).unwrap();
         }
         for (b_id, neighbors) in edges.iter().enumerate() {
             for neighbor in neighbors.iter().copied() {
@@ -291,16 +331,10 @@ impl TreeDecomposition {
         log::info!("Tree decomposition valid");
     }
 
-    // Implemtnation of modifying functions for TD during restriction and relaxations
-
-    /// Merge two variables in a bag and its children (recursively)
-    pub fn merge_variables(&mut self, x: usize, y: usize, bag_id: BagIndex) {
-    }
-
 }
 
 impl std::ops::Index<BagIndex> for TreeDecomposition {
-    type Output = FxHashSet<isize>;
+    type Output = FxHashSet<usize>;
 
     fn index(&self, index: BagIndex) -> &Self::Output {
         &self.bags[index.0]

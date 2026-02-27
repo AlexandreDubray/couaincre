@@ -11,9 +11,8 @@ use clap_verbosity_flag::{Verbosity, InfoLevel};
 use std::path::PathBuf;
 
 use problem::Problem;
-use restricted::RestrictedSolver;
+use restricted::{RestrictedSolver, RestrictionHeuristic};
 use counter::Counter;
-use tree_decomposition::TreeDecomposition;
 use tree_decomposition::TDHeuristic;
 
 #[derive(Parser)]
@@ -25,6 +24,9 @@ pub struct Args {
     #[clap(long, default_value_t=10)]
     /// Timeout for the pre-processing
     preproc_timeout: usize,
+    #[clap(long, default_value_t=usize::MAX)]
+    /// Timeout for the solving
+    timeout: usize,
     #[clap(short, long, value_enum, default_value_t=TDHeuristic::MinFill)]
     /// Which heuristic to use during the construction of the tree decomposition
     td_heuristic: TDHeuristic,
@@ -39,6 +41,8 @@ pub struct Args {
     /// Which model counter to use when computing the model count of restricted and relaxed
     /// formulas
     counter: Counter,
+    #[clap(long, value_enum, default_value_t=RestrictionHeuristic::Spread)]
+    restricted_heuristic: RestrictionHeuristic,
     #[command(flatten)]
     verbose: Verbosity<InfoLevel>,
 }
@@ -61,10 +65,11 @@ impl Args {
 fn main() {
     let args = Args::parse();
     env_logger::Builder::new().filter_level(args.verbose.log_level_filter()).init();
-    utils::check_executables();
+    utils::check_executables(&args);
     let problem = Problem::new(&args);
     if problem.is_empty() {
         log::info!("UNSAT");
     }
-    let td = TreeDecomposition::new(&args, &problem);
+    let mut restricted_solver = RestrictedSolver::new(&args);
+    restricted_solver.solve(&args);
 }

@@ -1,4 +1,4 @@
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashSet, FxHashMap};
 use std::fs::File;
 use std::process::{Command, Stdio};
 use std::io::{BufRead, BufReader};
@@ -9,6 +9,8 @@ use crate::utils::metadata_from_header;
 pub struct Problem {
     number_var: usize,
     clauses: Vec<Vec<isize>>,
+    var_pos_occ: Vec<FxHashSet<usize>>,
+    var_neg_occ: Vec<FxHashSet<usize>>,
 }
 
 impl Problem {
@@ -29,7 +31,7 @@ impl Problem {
             // Code for UNSAT in cadical
             if code == 20 {
                 log::info!("Formula is UNSAT");
-                return Self { number_var: 0, clauses: vec![] };
+                return Self { number_var: 0, clauses: vec![], var_pos_occ: vec![], var_neg_occ: vec![] };
             }
         }
         log::info!("Formula is SAT");
@@ -148,9 +150,22 @@ impl Problem {
             }
         }
         log::info!("After initial BUP, {} variables and {} clauses remaining", map_variable.len(), clauses.len());
+        let mut var_pos_occ = vec![FxHashSet::default(); new_variable_index - 1];
+        let mut var_neg_occ = vec![FxHashSet::default(); new_variable_index - 1];
+        for (clause_id, clause) in clauses.iter().enumerate() {
+            for literal in clause.iter().copied() {
+                if literal < 0 {
+                    var_neg_occ[literal.unsigned_abs() - 1].insert(clause_id);
+                } else {
+                    var_pos_occ[literal.unsigned_abs() - 1].insert(clause_id);
+                }
+            }
+        }
         Self {
             number_var: new_variable_index - 1,
             clauses,
+            var_pos_occ,
+            var_neg_occ,
         }
     }
 
@@ -164,8 +179,26 @@ impl Problem {
         self.number_var
     }
 
+    /// Returns the number of clauses in the problem
+    pub fn number_clauses(&self) -> usize {
+        self.clauses.len()
+    }
+
     /// Iterates on the clauses of the problem
     pub fn iter_clauses(&self) -> impl Iterator<Item = &Vec<isize>> {
         self.clauses.iter()
+    }
+
+    /// Iterates on the clauses of the problem in DIMACS format
+    pub fn iter_clauses_dimacs(&self) -> impl Iterator<Item = String> {
+        self.iter_clauses().map(|clause| format!("{} 0", clause.iter().map(|l| l.to_string()).collect::<Vec<String>>().join(" ")))
+    }
+
+    pub fn positive_occurences(&self, variable: usize) -> &FxHashSet<usize> {
+        &self.var_pos_occ[variable]
+    }
+
+    pub fn negative_occurences(&self, variable: usize) -> &FxHashSet<usize> {
+        &self.var_neg_occ[variable]
     }
 }

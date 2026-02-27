@@ -41,7 +41,7 @@ pub fn metadata_from_header(args: &Args) -> (usize, usize) {
     panic!();
 }
 
-pub fn check_executables() {
+pub fn check_executables(args: &Args) {
     if let Err(_) = Command::new("cadical")
         .arg("--help")
             .stdout(Stdio::null())
@@ -57,5 +57,19 @@ pub fn check_executables() {
             .status() {
         log::error!("No executable bpe found");
         exit(1);
+    }
+    if args.td_validate {
+        // Write a small file to validate because td-validate hasn't any --help flag
+        std::fs::write("tmp.gr", "p tw 2 1\n1 2");
+        if let Err(_) = Command::new("td-validate")
+            .arg("test.gr")
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status() {
+            log::error!("td-validate flag on but executable not found");
+            std::fs::remove_file("tmp.gr").unwrap();
+            exit(1);
+        }
+        std::fs::remove_file("tmp.gr").unwrap();
     }
 }
