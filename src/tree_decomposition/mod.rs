@@ -1,5 +1,5 @@
 pub mod td;
-pub mod td_heuristic;
+pub mod contraction;
 
-pub use td::TreeDecomposition;
-pub use td_heuristic::TDHeuristic;
+pub use contraction::ContractionHeuristic;
+pub use td::compute_restrictions;

@@ -1,15 +1,6 @@
-use clap::ValueEnum;
-
 mod restricted;
-mod heuristics;
 
 pub use restricted::RestrictedSolver;
-
-#[derive(Clone, ValueEnum)]
-pub enum RestrictionHeuristic {
-    Size,
-    Spread,
-}
 
 pub enum RestrictionOp {
     Equal,
@@ -26,25 +17,11 @@ pub struct Restriction {
 
 impl Restriction {
 
-    fn new(x: Option<usize>, y: Option<usize>, op: RestrictionOp) -> Self {
+    pub fn new(x: Option<usize>, y: Option<usize>, op: RestrictionOp) -> Self {
         Self {
             x,
             y,
             op,
-        }
-    }
-
-    fn flip(&self) -> Self {
-        let newOp = match self.op {
-            RestrictionOp::Equal => RestrictionOp::NotEqual,
-            RestrictionOp::NotEqual => RestrictionOp::Equal,
-            RestrictionOp::AssignTrue => RestrictionOp::AssignFalse,
-            RestrictionOp::AssignFalse => RestrictionOp::AssignTrue,
-        };
-        Self {
-            x: self.x,
-            y: self.y,
-            op: newOp,
         }
     }
 

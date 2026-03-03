@@ -21,12 +21,12 @@ impl Counter {
         };
         match counter_proc.stdin.take() {
             Some(mut stdin) => {
-                writeln!(stdin, "p cnf {} {}", number_var, number_clauses);
+                writeln!(stdin, "p cnf {} {}", number_var, number_clauses).unwrap();
                 for clause in problem.iter_clauses_dimacs() {
-                    writeln!(stdin, "{}", clause);
+                    writeln!(stdin, "{}", clause).unwrap();
                 }
                 for restriction in restrictions.iter() {
-                    writeln!(stdin, "{}", restriction.to_dimacs_lines());
+                    writeln!(stdin, "{}", restriction.to_dimacs_lines()).unwrap();
                 }
             },
             None => {

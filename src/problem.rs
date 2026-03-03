@@ -9,6 +9,7 @@ use crate::utils::metadata_from_header;
 pub struct Problem {
     number_var: usize,
     clauses: Vec<Vec<isize>>,
+    active: Vec<bool>,
     var_pos_occ: Vec<FxHashSet<usize>>,
     var_neg_occ: Vec<FxHashSet<usize>>,
 }
@@ -31,7 +32,7 @@ impl Problem {
             // Code for UNSAT in cadical
             if code == 20 {
                 log::info!("Formula is UNSAT");
-                return Self { number_var: 0, clauses: vec![], var_pos_occ: vec![], var_neg_occ: vec![] };
+                return Self { number_var: 0, clauses: vec![], active: vec![], var_pos_occ: vec![], var_neg_occ: vec![] };
             }
         }
         log::info!("Formula is SAT");
@@ -161,9 +162,11 @@ impl Problem {
                 }
             }
         }
+        let nb_clauses = clauses.len();
         Self {
             number_var: new_variable_index - 1,
             clauses,
+            active: vec![true; nb_clauses],
             var_pos_occ,
             var_neg_occ,
         }
@@ -186,7 +189,7 @@ impl Problem {
 
     /// Iterates on the clauses of the problem
     pub fn iter_clauses(&self) -> impl Iterator<Item = &Vec<isize>> {
-        self.clauses.iter()
+        self.clauses.iter().enumerate().filter(|(index, _)| self.active[*index]).map(|c| c.1)
     }
 
     /// Iterates on the clauses of the problem in DIMACS format
@@ -201,4 +204,23 @@ impl Problem {
     pub fn negative_occurences(&self, variable: usize) -> &FxHashSet<usize> {
         &self.var_neg_occ[variable]
     }
+
+    pub fn make_equal(&mut self, u: usize, v: usize) {
+        for clause_id in self.var_pos_occ[u].intersection(&self.var_neg_occ[v]).copied() {
+            self.active[clause_id] = false;
+        }
+        for clause_id in self.var_pos_occ[v].intersection(&self.var_neg_occ[u]).copied() {
+            self.active[clause_id] = false;
+        }
+    }
+
+    pub fn make_not_equal(&mut self, u: usize, v: usize) {
+        for clause_id in self.var_pos_occ[u].intersection(&self.var_pos_occ[v]).copied() {
+            self.active[clause_id] = false;
+        }
+        for clause_id in self.var_neg_occ[u].intersection(&self.var_neg_occ[v]).copied() {
+            self.active[clause_id] = false;
+        }
+    }
+
 }

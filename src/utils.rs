@@ -1,28 +1,8 @@
-use std::path::PathBuf;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio, exit};
 
 use crate::Args;
-
-pub fn clauses_from_dimacs(input: PathBuf) -> Vec<String> {
-    let file = File::open(input).unwrap();
-    let reader = BufReader::new(file);
-    reader.lines().map(|l| l.unwrap()).filter(|line| !line.starts_with('c') && !line.starts_with("p cnf")).collect()
-}
-
-pub fn number_var_from_dimacs(input: PathBuf) -> usize {
-    let file = File::open(input).unwrap();
-    let reader = BufReader::new(file);
-    for line in reader.lines() {
-        let line = line.unwrap();
-        if line.starts_with("p cnf") {
-            return line.split_whitespace().skip(2).next().unwrap().parse::<usize>().unwrap();
-        }
-    }
-    log::error!("No header found in DIMACS file when looking for metadata");
-    panic!();
-}
 
 /// Returns the number of variables and clauses in the input file
 pub fn metadata_from_header(args: &Args) -> (usize, usize) {
@@ -41,7 +21,7 @@ pub fn metadata_from_header(args: &Args) -> (usize, usize) {
     panic!();
 }
 
-pub fn check_executables(args: &Args) {
+pub fn check_executables() {
     if let Err(_) = Command::new("cadical")
         .arg("--help")
             .stdout(Stdio::null())
@@ -57,19 +37,5 @@ pub fn check_executables(args: &Args) {
             .status() {
         log::error!("No executable bpe found");
         exit(1);
-    }
-    if args.td_validate {
-        // Write a small file to validate because td-validate hasn't any --help flag
-        std::fs::write("tmp.gr", "p tw 2 1\n1 2");
-        if let Err(_) = Command::new("td-validate")
-            .arg("test.gr")
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status() {
-            log::error!("td-validate flag on but executable not found");
-            std::fs::remove_file("tmp.gr").unwrap();
-            exit(1);
-        }
-        std::fs::remove_file("tmp.gr").unwrap();
     }
 }
