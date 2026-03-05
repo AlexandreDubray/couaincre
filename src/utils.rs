@@ -3,6 +3,7 @@ use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio, exit};
 
 use crate::Args;
+use crate::counter::Counter;
 
 /// Returns the number of variables and clauses in the input file
 pub fn metadata_from_header(args: &Args) -> (usize, usize) {
@@ -21,21 +22,22 @@ pub fn metadata_from_header(args: &Args) -> (usize, usize) {
     panic!();
 }
 
-pub fn check_executables() {
-    if let Err(_) = Command::new("cadical")
-        .arg("--help")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status() {
-        log::error!("No executable cadical found");
+fn check_cmd(cmd: &str, args: &[&str]) {
+    if let Err(_) = Command::new(cmd)
+        .args(args)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status() {
+        log::error!("Command {} not found", cmd);
         exit(1);
     }
-    if let Err(_) = Command::new("bpe")
-        .arg("--help")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status() {
-        log::error!("No executable bpe found");
-        exit(1);
+}
+
+pub fn check_executables(args: &Args) {
+    check_cmd("cadical", &["--help"]);
+    check_cmd("bpe", &["--help"]);
+    match args.counter {
+        Counter::D4 => check_cmd("d4", &["<<<", "p cnf 1 1 1 0"]),
+        Counter::Ganak => check_cmd("ganak", &["--help"]),
     }
 }

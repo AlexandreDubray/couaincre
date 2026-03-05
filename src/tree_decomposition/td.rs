@@ -23,8 +23,6 @@ fn fill_in_score(graph: &FxHashMap<usize, FxHashSet<usize>>, node: usize) -> usi
 
 fn compute_treewidth(graph: &mut FxHashMap<usize, FxHashSet<usize>>) -> usize {
     let number_var = graph.len();
-    log::trace!("Computing an upper-bound on the treewidth of the current primal graph");
-    log::trace!("Number of variable to eliminate: {}", number_var);
 
     // Buckets used to compute the order. We place each node in a bucket corresponding to its
     // heuristic score. Then, we can process nodes in increasing order of bucket.
@@ -111,13 +109,14 @@ fn compute_primal_graph(problem: &Problem) -> FxHashMap<usize, FxHashSet<usize>>
     graph
 }
 
-pub fn compute_restrictions(args: &Args, problem: &mut Problem) -> Vec<Restriction> {
+pub fn compute_restrictions(args: &Args, mut problem: Problem) -> Vec<Restriction> {
     log::trace!("Computing restrictions for lower bound computation");
-    let mut primal_graph = compute_primal_graph(problem);
+    let mut primal_graph = compute_primal_graph(&problem);
     let mut treewidth = compute_treewidth(&mut primal_graph);
     log::info!("Initial treewidth is {}", treewidth);
     let mut restrictions = vec![];
     while treewidth > args.td_threshold {
+        primal_graph = compute_primal_graph(&problem);
         let (u, v) = args.contraction_heuristic.edge_to_contract(&primal_graph);
         let pos_u = problem.positive_occurences(u);
         let neg_u = problem.negative_occurences(u);
@@ -135,10 +134,11 @@ pub fn compute_restrictions(args: &Args, problem: &mut Problem) -> Vec<Restricti
             problem.make_not_equal(u, v);
         }
 
-        primal_graph = compute_primal_graph(problem);
+        primal_graph = compute_primal_graph(&problem);
         treewidth = compute_treewidth(&mut primal_graph);
-        log::trace!("Contracting node {} and {}. New treewidth is {}", u, v, treewidth);
+        log::trace!("Updated treewidth: {}", treewidth);
     }
+    log::trace!("Restrictions computed: {}", restrictions.iter().map(|r| format!("{}", r)).collect::<Vec<String>>().join(", "));
     restrictions
 }
 
