@@ -14,16 +14,20 @@ pub enum Counter {
 
 impl Counter {
 
-    pub fn lower_bound(&self, problem: &Problem, restrictions: &[Restriction]) -> Option<f64> {
+    pub fn lower_bound(&self, problem: &Problem, restrictions: &[Restriction], timeout: u64) -> Option<f64> {
         let number_var = problem.number_var();
         let number_clauses = problem.number_clauses() + restrictions.iter().map(|restriction| restriction.number_of_encoding_clauses()).sum::<usize>();
         let mut counter_proc = match self {
-            Self::D4 => Command::new("d4")
+            Self::D4 => Command::new("timeout")
+                .arg(format!("{}", timeout))
+                .arg("d4")
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
                 .spawn()
                 .unwrap(),
-            Self::Ganak => Command::new("ganak")
+            Self::Ganak => Command::new("timeout")
+                .arg(format!("{}", timeout))
+                .arg("ganak")
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
                 .spawn()
@@ -31,7 +35,7 @@ impl Counter {
         };
         match counter_proc.stdin.take() {
             Some(mut stdin) => {
-                log::trace!("Launching model counter on problem with {} variables and {} clauses", number_var, number_clauses);
+                log::trace!("Launching model counter on problem with {} variables and {} clauses with {} seconds timeout", number_var, number_clauses, timeout);
                 writeln!(stdin, "p cnf {} {}", number_var, number_clauses).unwrap();
                 for clause in problem.iter_clauses_dimacs() {
                     writeln!(stdin, "{}", clause).unwrap();

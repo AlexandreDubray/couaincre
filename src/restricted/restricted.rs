@@ -42,7 +42,7 @@ impl RestrictedSolver {
             let chunk_size = (nb_restrictions / n_calls as f64).ceil() as usize;
             log::info!("Chunk size for restriction removal is {}", chunk_size);
             while !restrictions.is_empty() && CTRL.remaining(args.timeout) > 0 {
-                if let Some(lb) = args.counter().lower_bound(&self.problem, &restrictions) {
+                if let Some(lb) = args.counter().lower_bound(&self.problem, &restrictions, CTRL.remaining(args.timeout)) {
                     log::info!("Lower bound on the log-model-count {} ({} restrictions)", lb, restrictions.len());
                     self.bounds.push((self.start_time.elapsed().as_secs(), lb));
                 } 
@@ -52,7 +52,7 @@ impl RestrictedSolver {
         }
         if CTRL.remaining(args.timeout) > 0 {
             log::trace!("Computing the true model count");
-            if let Some(model_count) = args.counter().lower_bound(&self.problem, &restrictions) {
+            if let Some(model_count) = args.counter().lower_bound(&self.problem, &restrictions, CTRL.remaining(args.timeout)) {
                 log::info!("Exact log-model-count is {}", model_count);
                 self.bounds.push((self.start_time.elapsed().as_secs(), model_count));
                 self.exact = true;

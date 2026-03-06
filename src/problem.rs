@@ -153,7 +153,7 @@ impl Problem {
             if self.var_pos_occ[u].contains(&clause_id) {
                 self.active[clause_id] = false;
             } else {
-                let index = self.clauses[clause_id].iter().position(|&l| l.unsigned_abs() == v).unwrap();
+                let index = self.clauses[clause_id].iter().position(|&l| l.unsigned_abs() - 1 == v).unwrap();
                 self.clauses[clause_id].swap_remove(index);
             }
         }
@@ -161,7 +161,7 @@ impl Problem {
             if self.var_neg_occ[u].contains(&clause_id) {
                 self.active[clause_id] = false;
             } else {
-                let index = self.clauses[clause_id].iter().position(|&l| l.unsigned_abs() == v).unwrap();
+                let index = self.clauses[clause_id].iter().position(|&l| l.unsigned_abs() - 1 == v).unwrap();
                 self.clauses[clause_id].swap_remove(index);
             }
         }
