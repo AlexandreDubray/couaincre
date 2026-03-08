@@ -47,15 +47,16 @@ impl Problem {
         // This tool takes a CNF formula in DIMACS file as input and return a new formula in DIMACS
         // format.
         log::trace!("Launche B+E pre-processing with {} seconds time limit", args.preproc_timeout);
-        let dimacs = Command::new("bpe")
+        let dimacs = Command::new("timeout")
+            .arg(format!("{}", args.preproc_timeout))
+            .arg("bpe")
             .arg(args.input.clone())
-            .arg(format!("-cpu-lim={}", args.preproc_timeout))
             .stdout(Stdio::piped())
             .output()
             .unwrap();
         log::trace!("Pre-processing finished. {} seconds elapsed since start", CTRL.elapsed());
         let bpe_out = String::from_utf8(dimacs.stdout).unwrap();
-        let lines: Box<dyn Iterator<Item = String>> = if !bpe_out.ends_with("s UNSATISFIABLE\n") {
+        let lines: Box<dyn Iterator<Item = String>> = if dimacs.status.success() && !bpe_out.ends_with("s UNSATISFIABLE\n") {
             log::trace!("B+E found a pre-processed formula");
             Box::new(bpe_out.lines().map(|s| s.to_string()))
         } else {
@@ -93,6 +94,9 @@ impl Problem {
                 }
             }
         }
+        log::info!("Number of unary clauses: {}", clauses.iter().filter(|cls| cls.len() == 1).count());
+        log::info!("Number of binary clauses: {}", clauses.iter().filter(|cls| cls.len() == 2).count());
+        log::info!("Number of ternary of more clauses: {}", clauses.iter().filter(|cls| cls.len() > 2).count());
 
         let mut var_pos_occ = vec![FxHashSet::default(); number_var_after_preproc];
         let mut var_neg_occ = vec![FxHashSet::default(); number_var_after_preproc];
@@ -184,6 +188,10 @@ impl Problem {
                 self.clauses[clause_id].swap_remove(index);
             }
         }
+    }
+
+    pub fn number_active_clauses(&self) -> usize {
+        self.active.iter().copied().filter(|&flag| flag).count()
     }
 
 }

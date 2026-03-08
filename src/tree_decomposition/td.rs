@@ -1,4 +1,5 @@
 use rustc_hash::{FxHashSet, FxHashMap};
+use rand::seq::SliceRandom;
 
 use crate::Args;
 use crate::problem::Problem;
@@ -21,7 +22,7 @@ fn fill_in_score(graph: &FxHashMap<usize, FxHashSet<usize>>, node: usize) -> usi
     missing_edges
 }
 
-fn compute_treewidth(graph: &mut FxHashMap<usize, FxHashSet<usize>>) -> usize {
+fn compute_treewidth(mut graph: FxHashMap<usize, FxHashSet<usize>>) -> usize {
     let number_var = graph.len();
 
     // Buckets used to compute the order. We place each node in a bucket corresponding to its
@@ -109,36 +110,85 @@ fn compute_primal_graph(problem: &Problem) -> FxHashMap<usize, FxHashSet<usize>>
     graph
 }
 
+fn max_degree_primal_graph(primal_graph: &FxHashMap<usize, FxHashSet<usize>>) -> usize {
+    primal_graph.values().map(|l| l.len()).max().unwrap()
+}
+
+fn contract_edge(graph: &mut FxHashMap<usize, FxHashSet<usize>>, u: usize, v: usize) {
+    for n in graph[&v].iter().copied().collect::<Vec<usize>>() {
+        if n != u {
+            graph.get_mut(&u).unwrap().insert(n);
+            let n_adj = graph.get_mut(&n).unwrap();
+            n_adj.remove(&v);
+            n_adj.insert(u);
+        }
+    }
+    graph.get_mut(&u).unwrap().remove(&v);
+    graph.get_mut(&v).unwrap().clear();
+}
+
 pub fn compute_restrictions(args: &Args, mut problem: Problem) -> Vec<Restriction> {
     log::trace!("Computing restrictions for lower bound computation");
     let mut primal_graph = compute_primal_graph(&problem);
-    let mut treewidth = compute_treewidth(&mut primal_graph);
+
+    let mut treewidth = compute_treewidth(primal_graph.clone());
     log::info!("Initial treewidth is {}", treewidth);
+    if treewidth <= args.td_threshold {
+        return vec![];
+    }
     let mut restrictions = vec![];
+    let mut contraction_candidates = primal_graph.keys().copied().collect::<Vec<usize>>();
+    let mut contracted = FxHashSet::<usize>::default();
+    let mut rng = rand::rng();
+
     while treewidth > args.td_threshold {
-        primal_graph = compute_primal_graph(&problem);
-        let (u, v) = args.contraction_heuristic.edge_to_contract(&primal_graph);
-        let pos_u = problem.positive_occurences(u);
-        let neg_u = problem.negative_occurences(u);
-        let pos_v = problem.positive_occurences(v);
-        let neg_v = problem.negative_occurences(v);
 
-        let impact_equal = pos_u.intersection(neg_v).count() + neg_u.intersection(pos_v).count();
-        let impact_not_equal = pos_u.intersection(pos_v).count() + neg_u.intersection(neg_v).count();
-
-        if impact_equal > impact_not_equal {
-            restrictions.push(Restriction::new(Some(u), Some(v), RestrictionOp::Equal));
-            problem.make_equal(u, v);
-        } else {
-            restrictions.push(Restriction::new(Some(u), Some(v), RestrictionOp::NotEqual));
-            problem.make_not_equal(u, v);
+        log::trace!("Number of nodes that can be contracted: {}", contraction_candidates.len());
+        contraction_candidates.shuffle(&mut rng);
+        contracted.clear();
+        let mut contractions = vec![];
+        let mut to_remove = vec![];
+        for (i, node) in contraction_candidates.iter().copied().enumerate() {
+            if contracted.contains(&node) || primal_graph[&node].is_empty() {
+                continue;
+            }
+            if let Some((_, contract_to)) = primal_graph[&node].iter().copied().filter(|n| !contracted.contains(n)).map(|n| (primal_graph[&node].intersection(&primal_graph[&n]).count(), n)).max() {
+                contracted.insert(node);
+                contracted.insert(contract_to);
+                contractions.push((node, contract_to));
+                to_remove.push(i);
+            }
         }
 
+        for i in to_remove.iter().copied().rev() {
+            contraction_candidates.swap_remove(i);
+        }
+        
+        log::trace!("Performing {} edge contractions", contractions.len());
+        for (u, v) in contractions.iter().copied() {
+            let pos_u = problem.positive_occurences(u);
+            let neg_u = problem.negative_occurences(u);
+            let pos_v = problem.positive_occurences(v);
+            let neg_v = problem.negative_occurences(v);
+
+            let impact_equal = pos_u.intersection(neg_v).count() + neg_u.intersection(pos_v).count();
+            let impact_not_equal = pos_u.intersection(pos_v).count() + neg_u.intersection(neg_v).count();
+
+            if impact_equal > impact_not_equal {
+                restrictions.push(Restriction::new(Some(u), Some(v), RestrictionOp::Equal));
+                problem.make_equal(u, v);
+            } else {
+                restrictions.push(Restriction::new(Some(u), Some(v), RestrictionOp::NotEqual));
+                problem.make_not_equal(u, v);
+            }
+            contract_edge(&mut primal_graph, u, v);
+        }
+        println!("Number of active clauses after updated restrictions: {}", problem.number_active_clauses());
+
         primal_graph = compute_primal_graph(&problem);
-        treewidth = compute_treewidth(&mut primal_graph);
+        treewidth = compute_treewidth(primal_graph.clone());
         log::trace!("Updated treewidth: {}", treewidth);
     }
-    log::trace!("Restrictions computed: {}", restrictions.iter().map(|r| format!("{}", r)).collect::<Vec<String>>().join(", "));
     restrictions
 }
 
