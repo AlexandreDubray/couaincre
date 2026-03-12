@@ -5,14 +5,13 @@ edition = "2024"
 
 [dependencies]
 clap = { version = ">=4.5.5", features = ["derive"] }
-rustsat = { version = ">=0.7.5", features = ["fxhash"] }
-rustsat-tools = ">=0.7.5"
 rustc-hash = ">=2.1.1"
 malachite-base = "0.9.1"
 log = "0.4"
 env_logger = "0.11"
 clap-verbosity-flag = "3.0"
 rand = "0.10"
+cryptominisat = { path = "./cryptominisat-rs" }
 
 [dependencies.malachite]
 version = "0.9.1"

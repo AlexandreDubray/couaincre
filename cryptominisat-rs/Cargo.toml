@@ -1,0 +1,28 @@
+[package]
+name = "cryptominisat"
+version = "5.8.0-rust1"
+authors = ["Robert Grosse <n210241048576@gmail.com>", "Mate Soos <soos.mate@gmail.com>"]
+links = "cryptominisat5"
+build = "build.rs"
+license = "MIT"
+readme = "README.markdown"
+repository = "https://github.com/storyyeller/cryptominisat-rs"
+description = "Rust bindings for CryptoMiniSat, a boolean satisfiability solver"
+keywords = ["SAT"]
+homepage = "https://github.com/msoos/cryptominisat"
+
+exclude = [
+    "cryptominisat/debian/*",
+    "cryptominisat/docs/*",
+    "cryptominisat/scripts/*",
+    "cryptominisat/tests/*",
+    "cryptominisat/utils/*",
+    "cryptominisat/web/*",
+]
+
+
+[dependencies]
+libc = "0.2.81"
+
+[build-dependencies]
+cmake = "0.1.45"

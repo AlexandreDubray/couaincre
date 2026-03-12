@@ -36,6 +36,8 @@ pub struct Args {
     counter: Counter,
     #[clap(long, value_enum, default_value_t=ContractionHeuristic::MaxDegMostCommon)]
     contraction_heuristic: ContractionHeuristic,
+    #[clap(long, default_value_t=1000)]
+    pivot: usize,
     #[command(flatten)]
     verbose: Verbosity<InfoLevel>,
 }
@@ -77,5 +79,6 @@ fn main() {
     env_logger::Builder::new().filter_level(args.verbose.log_level_filter()).init();
     utils::check_executables(&args);
     let mut restricted_solver = RestrictedSolver::new(&args);
-    restricted_solver.solve(&args);
+    //restricted_solver.solve(&args);
+    restricted_solver.xor_solve(&args);
 }

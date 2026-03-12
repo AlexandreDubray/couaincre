@@ -1,7 +1,11 @@
 use rustc_hash::{FxHashSet, FxHashMap};
 use std::fs::File;
 use std::process::{Command, Stdio};
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, BufWriter, Write};
+use std::path::PathBuf;
+
+use malachite::Natural;
+use malachite::base::num::conversion::traits::SciMantissaAndExponent;
 
 use crate::{Args, CTRL};
 use crate::utils::metadata_from_header;
@@ -13,15 +17,15 @@ pub struct Problem {
     active: Vec<bool>,
     var_pos_occ: Vec<FxHashSet<usize>>,
     var_neg_occ: Vec<FxHashSet<usize>>,
+    independent_set: Vec<usize>,
+    log10_mult_factor: f64,
 }
 
 impl Problem {
 
     pub fn new(args: &Args) -> Self {
-        {
-            let (number_var, number_cls) = metadata_from_header(args);
-            log::info!("CNF file with {} variables and {} clauses before preprocess", number_var, number_cls);
-        }
+        let (number_var, number_cls) = metadata_from_header(args);
+        log::info!("CNF file with {} variables and {} clauses before preprocess", number_var, number_cls);
         // We launch a SAT solver to verify that the formula is SAT.
         log::trace!("Checking satisfiability of the formula");
         let sat_status = Command::new("cadical")
@@ -39,10 +43,63 @@ impl Problem {
                     active: vec![],
                     var_pos_occ: vec![],
                     var_neg_occ: vec![],
+                    independent_set: vec![],
+                    log10_mult_factor: 0.0,
                 };
             }
         }
         log::info!("Formula is SAT. {} seconds elapsed since start", CTRL.elapsed());
+        // Storing the IS in a file since it can take some time to compute, when experimenting with
+        // large file we don't want to wait each time. Needs to be deactivated for experiments. If
+        // the file exists, load IS from file
+        let mut independent_set: Vec<usize> = vec![];
+        let mut log10_mult_factor = 0.0;
+
+        let mut filename = PathBuf::from("ind_set");
+        filename.push(args.input.file_name().unwrap());
+        if !filename.exists() {
+            log::info!("Computing an independent set using arjun");
+            let arjun = Command::new("arjun")
+                .arg(args.input.clone())
+                .stdout(Stdio::piped())
+                .output()
+                .unwrap();
+            let arjun_out = String::from_utf8(arjun.stdout).unwrap();
+            for line in arjun_out.lines().rev() {
+                if line.starts_with("c p show") {
+                    for variable in line.split_whitespace().skip(3).map(|s| s.parse::<usize>().unwrap()) {
+                        if variable > 0 {
+                            independent_set.push(variable - 1);
+                        }
+                    }
+                }
+                if line.starts_with("c MUST MULTIPLY BY") {
+                    let mult_factor = line.split_whitespace().last().unwrap().parse::<Natural>().unwrap();
+                    let (mantissa, exponent): (f64, u64) = mult_factor.sci_mantissa_and_exponent();
+                    let log10_2 = std::f64::consts::LOG10_2;
+                    log10_mult_factor = mantissa.log10() + (exponent as f64) * log10_2;
+                }
+            }
+            let mut writer = BufWriter::new(File::create(filename).unwrap());
+            writeln!(writer, "c p show {}", independent_set.iter().map(|v| v.to_string()).collect::<Vec<String>>().join(" ")).unwrap();
+            writeln!(writer, "log10 mult {}", log10_mult_factor).unwrap();
+        } else {
+            log::info!("IS already computed and stored in a file, getting from file");
+            let reader = BufReader::new(File::open(filename).unwrap());
+            for line in reader.lines() {
+                let line = line.unwrap();
+                if line.starts_with("c p show") {
+                    for v in line.split_whitespace().skip(3).map(|v| v.parse::<usize>().unwrap()) {
+                        independent_set.push(v);
+                    }
+                } else if line.starts_with("log10 mult") {
+                    log10_mult_factor = line.split_whitespace().last().unwrap().parse::<f64>().unwrap();
+                } else {
+                    panic!("Unrecognized lines in IS file: {}", line);
+                }
+            }
+        }
+        log::trace!("Independent set size : {} ({:.2}% of variables set size). Multiplication factor is {} (log10)", independent_set.len(), ((independent_set.len() as f64) / (number_var as f64)) * 100.0, log10_mult_factor);
         // First, we pre-process the formula using the B+E tool available at https://www.cril.univ-artois.fr/kc/bpe2.html
         // This tool takes a CNF formula in DIMACS file as input and return a new formula in DIMACS
         // format.
@@ -116,6 +173,8 @@ impl Problem {
             active: vec![true; nb_clauses],
             var_pos_occ,
             var_neg_occ,
+            independent_set,
+            log10_mult_factor,
         }
     }
 
@@ -150,6 +209,14 @@ impl Problem {
 
     pub fn negative_occurences(&self, variable: usize) -> &FxHashSet<usize> {
         &self.var_neg_occ[variable]
+    }
+
+    pub fn is_clause_active(&self, index: usize) -> bool {
+        self.active[index]
+    }
+
+    pub fn clause_at(&self, index: usize) -> &Vec<isize> {
+        &self.clauses[index]
     }
 
     pub fn make_equal(&mut self, u: usize, v: usize) {
@@ -194,4 +261,11 @@ impl Problem {
         self.active.iter().copied().filter(|&flag| flag).count()
     }
 
+    pub fn log10_mult_factor(&self) -> f64 {
+        self.log10_mult_factor
+    }
+
+    pub fn iter_independent_set(&self) -> impl Iterator<Item = usize> {
+        self.independent_set.iter().copied()
+    }
 }
