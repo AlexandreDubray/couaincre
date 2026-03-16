@@ -11,9 +11,8 @@ use std::path::PathBuf;
 use std::time::Instant;
 use std::sync::LazyLock;
 
-use restricted::{RestrictedSolver, RestrictedMethod};
+use restricted::{RestrictedSolver, RestrictedMethod, EqualityHeuristic};
 use counter::Counter;
-use tree_decomposition::ContractionHeuristic;
 
 #[derive(Parser)]
 #[clap(name="Couaincre", version, author, about)]
@@ -34,8 +33,8 @@ pub struct Args {
     /// Which model counter to use when computing the model count of restricted and relaxed
     /// formulas
     counter: Counter,
-    #[clap(long, value_enum, default_value_t=ContractionHeuristic::MaxDegMostCommon)]
-    contraction_heuristic: ContractionHeuristic,
+    #[clap(long, value_enum, default_value_t=EqualityHeuristic::MaxDegMostCommon)]
+    contraction_heuristic: EqualityHeuristic,
     #[clap(long, default_value_t=RestrictedMethod::Equality)]
     restricted_method: RestrictedMethod,
     #[command(flatten)]

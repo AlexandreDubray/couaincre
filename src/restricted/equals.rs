@@ -1,0 +1,183 @@
+use rustc_hash::{FxHashSet, FxHashMap};
+use clap::ValueEnum;
+use rand::seq::SliceRandom;
+
+use std::fs::File;
+use std::io::{BufWriter, Write};
+use std::process::{Command, Stdio};
+
+use crate::Args;
+use crate::problem::Problem;
+use super::constraint::Constraint;
+
+fn insert_in_bucket(buckets: &mut FxHashMap<usize, Vec<usize>>, bucket: usize, element: usize) {
+    let bucket = buckets.entry(bucket).or_default();
+    bucket.push(element);
+}
+
+fn fill_in_score(graph: &FxHashMap<usize, FxHashSet<usize>>, node: usize) -> usize {
+    if graph[&node].is_empty() {
+        return 0;
+    }
+    let number_neighbors = graph[&node].len();
+    let mut missing_edges = (number_neighbors * (number_neighbors - 1)) / 2;
+    let neighbors = graph[&node].iter().copied().collect::<Vec<usize>>();
+    for i in 0..neighbors.len() {
+        for j in (i+1)..neighbors.len() {
+            if graph[&neighbors[i]].contains(&neighbors[j]) {
+                missing_edges -= 1;
+            }
+        }
+    }
+    missing_edges
+}
+
+fn compute_treewidth(mut graph: FxHashMap<usize, FxHashSet<usize>>) -> usize {
+    let number_var = graph.len();
+
+    // Buckets used to compute the order. We place each node in a bucket corresponding to its
+    // heuristic score. Then, we can process nodes in increasing order of bucket.
+    let mut buckets = FxHashMap::<usize, Vec<usize>>::default();
+    // Flag to indicate if the score of a node must be recomputed. We lazily recompute them
+    // when poping them from the bucket as this computation can be long (e.g., min-fill)
+    //
+    // /!\ Note: since we lazily recompute the score when popping nodes from the bucket, we
+    // might process nodes in non-greedy order (i.e., process a node that has a worst-score
+    // than another non-processed node). However, re-computing the heuristic at each
+    // modification of the primal graph is not scalable for large graphs.
+    //
+    let mut recompute_score = FxHashSet::<usize>::default();
+    // Current minimum score. Since we greedily select nodes based on their minimum score, this
+    // give the next bucket to select a node from.
+    let mut min_score = usize::MAX;
+    // Initialise the buckets
+    for (candidate, _) in graph.iter() {
+        let score = fill_in_score(&graph, *candidate);
+        min_score = min_score.min(score);
+        insert_in_bucket(&mut buckets, score, *candidate);
+    }
+    // We compute the order for each node.
+    let mut eliminated = 0;
+    let mut treewidth = 0;
+    while eliminated != number_var {
+        // Finds the next non-empty bucket
+        while !buckets.contains_key(&min_score) || buckets.get(&min_score).unwrap().is_empty() {
+            min_score += 1;
+        }
+        // Pop a node from the bucket and recompute its score if needed. If the new score is
+        // worst than the computed one, put it in the associated bucket.
+        let node = buckets.get_mut(&min_score).unwrap().pop().unwrap();
+        if recompute_score.contains(&node) {
+            recompute_score.remove(&node);
+            let new_score = fill_in_score(&graph, node);
+            if new_score > min_score {
+                insert_in_bucket(&mut buckets, new_score, node);
+                continue;
+            }
+            min_score = min_score.min(new_score);
+        }
+        eliminated += 1;
+
+        // Clique size is primal_graph[node] + 1 (the neighbors and the node) but we remove 1 for
+        // the treewidth.
+        treewidth = treewidth.max(graph[&node].len());
+        
+        // Apply the node elimination
+
+        // Remove node from the graph (disconnect it from its neighbors) and connect all of its
+        // neighbors
+        let neighbors = graph[&node].iter().copied().collect::<Vec<usize>>();
+        for neighbor in neighbors.iter().copied() {
+            graph.get_mut(&neighbor).unwrap().extend(neighbors.iter().copied().filter(|n| *n != neighbor));
+            graph.get_mut(&neighbor).unwrap().remove(&node);
+        }
+        // Flags node for which the heuristic needs to be recomputed
+        // All nodes at a distance of 2 in the graph can have their min-fill heuristic
+        // changed.
+        for neighbor in graph[&node].iter().copied() {
+            recompute_score.insert(neighbor);
+            for neighbor_of_neighbor in graph[&neighbor].iter().copied().filter(|n| *n != node) {
+                recompute_score.insert(neighbor_of_neighbor);
+            }
+        }
+        graph.get_mut(&node).unwrap().clear();
+    }
+    treewidth
+}
+
+fn compute_primal_graph(problem: &Problem) -> FxHashMap<usize, FxHashSet<usize>> {
+    let mut graph = FxHashMap::<usize, FxHashSet<usize>>::default();
+    for clause in problem.iter_clauses() {
+        for i in 0..clause.len() {
+            for j in (i+1)..clause.len() {
+                let u = clause[i].unsigned_abs() - 1;
+                let v = clause[j].unsigned_abs() - 1;
+                graph.entry(u).or_default().insert(v);
+                graph.entry(v).or_default().insert(u);
+            }
+        }
+    }
+    graph
+}
+
+fn compute_equality_constraints(problem: &Problem, args: &Args) -> Vec<Constraint> {
+    log::trace!("Computing restrictions for lower bound computation");
+    let mut primal_graph = compute_primal_graph(&problem);
+
+    let mut treewidth = compute_treewidth(primal_graph.clone());
+    log::info!("Initial treewidth is {}", treewidth);
+    if treewidth <= args.td_threshold {
+        return vec![];
+    }
+    let mut constraints = vec![];
+
+    while treewidth > args.td_threshold {
+
+        let mut local_restrictions = args.contraction_heuristic.compute_restrictions(&primal_graph, &problem);
+
+        while let Some(restriction) = local_restrictions.pop() {
+            let vars = restriction.vars();
+            let x = vars[0];
+            for y in vars.iter().skip(1).copied() {
+                problem.make_equal(x, y);
+            }
+            restrictions.push(restriction);
+        }
+
+        println!("Number of active clauses after updated restrictions: {}", problem.number_active_clauses());
+
+        primal_graph = compute_primal_graph(&problem);
+        treewidth = compute_treewidth(primal_graph.clone());
+        log::trace!("Updated treewidth: {}", treewidth);
+    }
+    constraints
+}
+
+impl ContractionHeuristic {
+
+    pub fn compute_restrictions(&self, primal_graph: &FxHashMap<usize, FxHashSet<usize>>, problem: &Problem) -> Vec<Constraint> {
+        match self {
+            Self::MaxDegMostCommon => {
+                let mut contraction_candidates = primal_graph.keys().copied().collect::<Vec<usize>>();
+                let mut contracted = FxHashSet::<usize>::default();
+                let mut rng = rand::rng();
+                contraction_candidates.shuffle(&mut rng);
+                let mut equiv = vec![];
+                for node in contraction_candidates.iter().copied() {
+                    if contracted.contains(&node) || primal_graph[&node].is_empty() {
+                        continue;
+                    }
+                    if let Some((_, contract_to)) = primal_graph[&node].iter().copied().filter(|n| !contracted.contains(n)).map(|n| (primal_graph[&node].intersection(&primal_graph[&n]).count(), n)).max() {
+                        contracted.insert(node);
+                        contracted.insert(contract_to);
+                        equiv.push(Constraint::equality(vec![node, contract_to], true));
+                    }
+                }
+                equiv
+            },
+            Self::MinContractionDeg => {
+                vec![]
+            },
+        }
+    }
+}
