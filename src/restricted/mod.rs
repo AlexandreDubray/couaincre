@@ -1,7 +1,16 @@
 mod restricted;
 
+use clap::ValueEnum;
+
 pub use restricted::RestrictedSolver;
 
+#[derive(Clone, ValueEnum)]
+pub enum RestrictedMethod {
+    Equality,
+    Xor,
+}
+
+#[derive(Clone, Copy)]
 pub enum RestrictionOp {
     Equal,
 }
@@ -22,6 +31,10 @@ impl Restriction {
 
     pub fn vars(&self) -> &Vec<usize> {
         &self.vars
+    }
+
+    pub fn op(&self) -> RestrictionOp {
+        self.op
     }
 
     pub fn number_of_encoding_clauses(&self) -> usize {
@@ -52,6 +65,20 @@ impl std::fmt::Display for Restriction {
         match self.op {
             RestrictionOp::Equal => {
                 write!(f, "Equal({})", self.vars.iter().map(|v| format!("{}", v + 1)).collect::<Vec<String>>().join(","))?;
+            },
+        }
+        Ok(())
+    }
+}
+
+impl std::fmt::Display for RestrictedMethod {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Equality => {
+                write!(f, "equality")?;
+            },
+            Self::Xor => {
+                write!(f, "xor")?;
             },
         }
         Ok(())

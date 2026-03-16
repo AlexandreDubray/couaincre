@@ -10,6 +10,7 @@ use rand::seq::IteratorRandom;
 use crate::problem::Problem;
 use crate::{Args, CTRL};
 use crate::tree_decomposition::compute_restrictions;
+use super::{Restriction, RestrictionOp};
 
 pub struct RestrictedSolver {
     problem: Problem,
@@ -41,8 +42,47 @@ impl RestrictedSolver {
         }
     }
 
+    fn find_equality_constraints(&self) -> Vec<Restriction> {
+        log::trace!("Finding number of equality constraints such that the problem is UNSAT");
+        let mut sat_solver = CMSSolver::new();
+        let vars = (0..self.problem.number_var()).map(|_| sat_solver.new_var()).collect::<Vec<_>>();
+        for clause in self.problem.iter_clauses() {
+            let cms_cls = clause.iter().map(|&l| {
+                if l < 0 {
+                    !vars[l.unsigned_abs() - 1]
+                } else {
+                    vars[l.unsigned_abs() - 1]
+                }
+            }).collect::<Vec<_>>();
+            sat_solver.add_clause(&cms_cls);
+        }
+        let mut restrictions: Vec<Restriction> = vec![];
+        let mut number_equality = 1;
+        let mut rng = rand::rng();
+        loop {
+            while restrictions.len() < number_equality {
+                let sampled = self.problem.iter_independent_set().sample(&mut rng, 2);
+                let x = vars[sampled[0]];
+                let y = vars[sampled[1]];
+                sat_solver.add_clause(&[x, !y]);
+                sat_solver.add_clause(&[!x, y]);
+                restrictions.push(Restriction::new(vec![sampled[0], sampled[1]], RestrictionOp::Equal));
+            }
+            if sat_solver.solve() == Lbool::False {
+                log::trace!("Problem with {} equality constraint is UNSAT", restrictions.len());
+                log::trace!("Truncating to {} equality constraints", number_equality / 2);
+                restrictions.truncate(number_equality / 2);
+                break;
+            }
+            log::trace!("Problem with {} equality constraint is SAT", restrictions.len());
+            number_equality *= 2;
+        }
+        restrictions
+    }
+
     pub fn solve(&mut self, args: &Args) {
-        let mut restrictions = compute_restrictions(args, self.problem.clone());
+        //let mut restrictions = compute_restrictions(args, self.problem.clone());
+        let mut restrictions = self.find_equality_constraints();
         log::info!("Number of restrictions computed: {}", restrictions.len());
         if !restrictions.is_empty() {
             log::info!("Starting lower-bound computations with {} seconds remaining", CTRL.remaining(args.timeout));
@@ -71,7 +111,7 @@ impl RestrictedSolver {
 
     fn count_xor(solver: &mut CMSSolver, vars: &Vec<Lit>, args: &Args) -> usize {
         let mut count = 0;
-        while count < args.pivot {
+        while count < 100 {
             match solver.solve() {
                 Lbool::True => {
                     let model = solver.get_model();
@@ -118,10 +158,15 @@ impl RestrictedSolver {
         let mut rng = rand::rng();
         loop {
             while xor_clauses.len() < number_xor {
-                let var_indexes = self.problem.iter_independent_set().sample(&mut rng, 3).iter().map(|&v| vars[v]).collect::<Vec<Lit>>();
+                let var_indexes = self.problem.iter_independent_set().sample(&mut rng, 2).iter().map(|&v| vars[v]).collect::<Vec<Lit>>();
+                sat_solver.add_clause(&[var_indexes[0], !var_indexes[1]]);
+                sat_solver.add_clause(&[!var_indexes[0], var_indexes[1]]);
+                xor_clauses.push((vec![], true));
+                /*
                 let polarity = rand::random::<bool>();
                 sat_solver.add_xor_literal_clause(&var_indexes, polarity);
                 xor_clauses.push((var_indexes, polarity));
+                */
             }
             if sat_solver.solve() == Lbool::False {
                 log::trace!("Problem with {} XOR constraint is UNSAT", number_xor);
